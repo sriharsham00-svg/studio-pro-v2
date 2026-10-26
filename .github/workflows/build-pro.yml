@@ -1,0 +1,528 @@
+name: Build Studio PRO APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Project Files
+        run: |
+          mkdir -p proj/app/src/main/java/com/studiopro
+          mkdir -p proj/app/src/main/assets
+
+          cat > proj/settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "StudioPRO"
+          include ':app'
+          EOF
+
+          cat > proj/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.5.2' apply false
+          }
+          EOF
+
+          cat > proj/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=false
+          EOF
+
+          cat > proj/app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'com.studiopro'
+              compileSdk 34
+              defaultConfig {
+                  applicationId 'com.studiopro'
+                  minSdk 26
+                  targetSdk 34
+                  versionCode 4
+                  versionName '4.0'
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
+              }
+          }
+          EOF
+
+          cat > proj/app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-feature android:name="android.software.leanback" android:required="false" />
+              <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+              <queries>
+                  <intent>
+                      <action android:name="android.intent.action.MAIN" />
+                  </intent>
+              </queries>
+              <application
+                  android:label="Mi TV Studio PRO"
+                  android:usesCleartextTraffic="true"
+                  android:hardwareAccelerated="true"
+                  android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+                  <activity
+                      android:name=".MainActivity"
+                      android:screenOrientation="landscape"
+                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                          <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > proj/app/src/main/java/com/studiopro/MainActivity.java <<'EOF'
+          package com.studiopro;
+
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.content.pm.PackageManager;
+          import android.graphics.Color;
+          import android.os.Bundle;
+          import android.provider.Settings;
+          import android.view.View;
+          import android.view.WindowManager;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import java.io.File;
+
+          public class MainActivity extends Activity {
+              private WebView webView;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+                  webView = new WebView(this);
+                  webView.setBackgroundColor(Color.parseColor("#050609"));
+                  setContentView(webView);
+
+                  WebSettings ws = webView.getSettings();
+                  ws.setJavaScriptEnabled(true);
+                  ws.setDomStorageEnabled(true);
+                  ws.setMediaPlaybackRequiresUserGesture(false);
+                  ws.setAllowFileAccess(true);
+
+                  webView.setWebViewClient(new WebViewClient());
+                  webView.setWebChromeClient(new WebChromeClient());
+                  webView.addJavascriptInterface(new Bridge(), "Android");
+
+                  webView.setFocusable(true);
+                  webView.setFocusableInTouchMode(true);
+                  webView.requestFocus(View.FOCUS_DOWN);
+
+                  File overrideFile = new File(getFilesDir(), "index.html");
+                  if (overrideFile.exists()) {
+                      webView.loadUrl("file://" + overrideFile.getAbsolutePath());
+                  } else {
+                      webView.loadUrl("file:///android_asset/index.html");
+                  }
+              }
+
+              public class Bridge {
+                  @JavascriptInterface
+                  public void launch(String pkg) {
+                      if ("settings".equals(pkg)) {
+                          try {
+                              Intent s = new Intent(Settings.ACTION_SETTINGS);
+                              s.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                              startActivity(s);
+                          } catch (Exception ignored) {}
+                          return;
+                      }
+                      try {
+                          PackageManager pm = getPackageManager();
+                          Intent i = pm.getLeanbackLaunchIntentForPackage(pkg);
+                          if (i == null) i = pm.getLaunchIntentForPackage(pkg);
+                          if (i != null) {
+                              i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                              startActivity(i);
+                          }
+                      } catch (Exception ignored) {}
+                  }
+              }
+          }
+          EOF
+
+          cat > proj/app/src/main/assets/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+          <meta charset="UTF-8">
+          <title>Mi TV Studio PRO</title>
+          <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; outline: none; }
+          html, body { width: 100%; height: 100%; background: #050609; color: #fff; font-family: sans-serif; overflow: hidden; }
+          #stage {
+            position: absolute; top: 0; left: 0;
+            width: 960px; height: 540px;
+            transform-origin: 0 0;
+            overflow: hidden;
+            background: #050609;
+          }
+          #backdrop {
+            position: absolute; top: 0; left: 0; width: 960px; height: 540px;
+            background-size: cover; background-position: center 25%;
+            filter: brightness(0.7);
+            transition: background-image 0.25s ease;
+          }
+          #vignette {
+            position: absolute; top: 0; left: 0; width: 960px; height: 540px;
+            background: linear-gradient(90deg, #050609 0%, rgba(5,6,9,0.94) 38%, rgba(5,6,9,0.3) 100%),
+                        linear-gradient(0deg, #050609 0%, rgba(5,6,9,0.96) 35%, rgba(5,6,9,0.15) 100%);
+          }
+          .ui {
+            position: relative; z-index: 5; width: 960px; height: 540px;
+            display: flex; flex-direction: column; padding: 22px 36px;
+          }
+          .topbar {
+            display: flex; flex-direction: row; align-items: center; justify-content: space-between;
+            height: 38px; flex-shrink: 0;
+          }
+          .brand { display: flex; flex-direction: row; align-items: center; font-size: 15px; font-weight: 900; letter-spacing: 1.2px; color: #f4f4f5; }
+          .dot { width: 10px; height: 10px; border-radius: 5px; background: #e50914; margin-right: 8px; box-shadow: 0 0 10px #e50914; }
+          .nav { display: flex; flex-direction: row; background: rgba(18,20,29,0.85); padding: 4px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(4px); }
+          .tab {
+            padding: 5px 16px; border-radius: 16px; font-size: 12px; font-weight: 700; color: #a1a1aa;
+            margin: 0 2px; position: relative; transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease; will-change: transform;
+          }
+          .tab.active { color: #fff; background: #232738; }
+          .tab.focused { color: #fff; background: #e50914; transform: scale(1.06); box-shadow: 0 4px 14px rgba(229,9,20,0.5); }
+          .clock-box { display: flex; flex-direction: column; align-items: flex-end; }
+          .clock { font-size: 16px; font-weight: 800; color: #f4f4f5; letter-spacing: 0.5px; }
+          .date { font-size: 10px; font-weight: 600; color: #a1a1aa; margin-top: 1px; }
+          .hero { height: 175px; flex-shrink: 0; display: flex; flex-direction: column; justify-content: center; max-width: 540px; }
+          .badge-row { display: flex; flex-direction: row; align-items: center; margin-bottom: 6px; }
+          .badge { background: #e50914; color: #fff; font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 4px; margin-right: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.5); }
+          .meta { font-size: 11px; color: #cbd5e1; font-weight: 600; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+          .h-title { font-size: 32px; font-weight: 900; margin-bottom: 6px; text-shadow: 0 2px 6px rgba(0,0,0,0.8); letter-spacing: -0.5px; }
+          .h-desc { font-size: 12px; color: #cbd5e1; line-height: 1.4; text-shadow: 0 1px 4px rgba(0,0,0,0.8); }
+          .viewport { flex: 1; overflow: hidden; position: relative; padding-top: 8px; }
+          #row-stack { transition: transform 0.18s cubic-bezier(0.1, 0.9, 0.2, 1); will-change: transform; }
+          .row { margin-bottom: 18px; }
+          .r-title { font-size: 13px; font-weight: 800; color: #f4f4f5; margin-bottom: 8px; letter-spacing: 0.5px; }
+          .track { display: flex; flex-direction: row; transition: transform 0.18s cubic-bezier(0.1, 0.9, 0.2, 1); will-change: transform; }
+          .card {
+            position: relative; width: 176px; height: 100px; margin-right: 14px; border-radius: 10px;
+            background: #141722; flex-shrink: 0;
+            transition: transform 0.16s cubic-bezier(0.1, 0.9, 0.2, 1); will-change: transform;
+          }
+          .card-glow {
+            position: absolute; top: -3px; left: -3px; right: -3px; bottom: -3px;
+            border-radius: 12px; border: 2px solid #ffffff;
+            box-shadow: 0 10px 24px rgba(0,0,0,0.9), 0 0 16px rgba(229,9,20,0.8);
+            opacity: 0; transition: opacity 0.16s ease-out; will-change: opacity;
+            pointer-events: none; z-index: 4;
+          }
+          .card.focused { transform: scale(1.08); z-index: 5; }
+          .card.focused .card-glow { opacity: 1; }
+          .c-inner {
+            position: relative; width: 100%; height: 100%; border-radius: 10px; overflow: hidden;
+            background-size: cover; background-position: center;
+          }
+          .c-shade {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(0deg, rgba(0,0,0,0.94) 0%, rgba(0,0,0,0.35) 60%, rgba(0,0,0,0.1) 100%);
+            display: flex; flex-direction: column; justify-content: flex-end; padding: 8px 10px;
+          }
+          .c-tag {
+            position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,0.75);
+            backdrop-filter: blur(2px); padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 800; color: #fff;
+          }
+          .c-title { font-size: 13px; font-weight: 800; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+          .c-sub { font-size: 10px; color: #cbd5e1; margin-top: 1px; }
+          </style>
+          </head>
+          <body>
+          <div id="stage">
+            <div id="backdrop"></div>
+            <div id="vignette"></div>
+            <div class="ui">
+              <div class="topbar">
+                <div class="brand"><div class="dot" id="b-dot"></div><span>MI TV STUDIO PRO</span></div>
+                <div class="nav" id="nav-bar">
+                  <div class="tab active" data-tab="home">Home</div>
+                  <div class="tab" data-tab="cinema">Cinema</div>
+                  <div class="tab" data-tab="sports">Live Sports</div>
+                </div>
+                <div class="clock-box">
+                  <div class="clock" id="clock">12:00 PM</div>
+                  <div class="date" id="date">Mon, Oct 26</div>
+                </div>
+              </div>
+              <div class="hero">
+                <div class="badge-row">
+                  <span class="badge" id="h-badge">4K HDR</span>
+                  <span class="meta" id="h-meta">Official Android TV App</span>
+                </div>
+                <div class="h-title" id="h-title">YouTube</div>
+                <div class="h-desc" id="h-desc">Instant access to your subscriptions, 4K channels, music, and live streams.</div>
+              </div>
+              <div class="viewport">
+                <div id="row-stack"></div>
+              </div>
+            </div>
+          </div>
+          <script>
+          var DATA = {
+            home: [
+              { title: "Streaming Apps", items: [
+                { title: "YouTube", sub: "4K • Live", tag: "HDR", accent: "#ff0033", meta: "Official TV App", desc: "Watch subscriptions, 4K videos, and live streams on your Mi TV.", pkg: "com.google.android.youtube.tv", bg: "https://images.unsplash.com/photo-1611162616475-46b635cb6868?auto=format&fit=crop&w=960&q=75" },
+                { title: "Netflix", sub: "Dolby Vision", tag: "TOP 10", accent: "#e50914", meta: "Netflix Originals", desc: "Stream Stranger Things, Squid Game, and top cinema releases.", pkg: "com.netflix.ninja", bg: "https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?auto=format&fit=crop&w=960&q=75" },
+                { title: "Prime Video", sub: "Amazon Originals", tag: "UHD", accent: "#00a8e1", meta: "Included with Prime", desc: "Watch The Boys, Fallout, Mirzapur, and blockbuster movies.", pkg: "com.amazon.avod.thirdpartyclient", bg: "https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=960&q=75" },
+                { title: "Disney+ Hotstar", sub: "Sports & Marvel", tag: "LIVE", accent: "#2563eb", meta: "Cricket & Specials", desc: "Live cricket, Premier League, Marvel Studios, and Hotstar Specials.", pkg: "in.startv.hotstar", bg: "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=960&q=75" },
+                { title: "JioCinema", sub: "IPL & Movies", tag: "FREE", accent: "#d946ef", meta: "Live Sports & Entertainment", desc: "Stream live cricket, HBO originals, and regional blockbusters.", pkg: "com.jio.media.stb.ondemand", bg: "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=960&q=75" }
+              ]},
+              { title: "System & Controls", items: [
+                { title: "Google Play Store", sub: "Apps & Games", tag: "STORE", accent: "#0284c7", meta: "Official App Market", desc: "Download and update apps, games, and streaming tools on your TV.", pkg: "com.android.vending", bg: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=960&q=75" },
+                { title: "Android Settings", sub: "Wi-Fi & Display", tag: "SYS", accent: "#10b981", meta: "System Configuration", desc: "Open native Mi TV settings for Wi-Fi, sound, and Bluetooth.", pkg: "settings", bg: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&w=960&q=75" }
+              ]}
+            ],
+            cinema: [
+              { title: "Featured Cinema", items: [
+                { title: "Oppenheimer", sub: "Prime Video", tag: "IMDb 8.9", accent: "#f59e0b", meta: "Christopher Nolan • Sci-Fi/History", desc: "The story of J. Robert Oppenheimer and the atomic bomb.", pkg: "com.amazon.avod.thirdpartyclient", bg: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=960&q=75" },
+                { title: "Stranger Things", sub: "Netflix", tag: "IMDb 8.7", accent: "#e50914", meta: "Sci-Fi Thriller", desc: "Darkness returns to Hawkins as Eleven and friends unite.", pkg: "com.netflix.ninja", bg: "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=960&q=75" }
+              ]}
+            ],
+            sports: [
+              { title: "Live Arena", items: [
+                { title: "Live Cricket Hub", sub: "Hotstar Sports", tag: "LIVE", accent: "#2563eb", meta: "ICC Tournament Feed", desc: "Jump straight into live cricket coverage on Disney+ Hotstar.", pkg: "in.startv.hotstar", bg: "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=960&q=75" }
+              ]}
+            ]
+          };
+
+          var tabKeys = ['home', 'cinema', 'sports'];
+          var tabIdx = 0;
+          var zone = 'cards';
+          var rIdx = 0;
+          var cIdxByRow = [0, 0];
+          var lastCardEl = null;
+          var lastTabEl = null;
+          var heroTimer = null;
+          var lastKeyTime = 0;
+
+          function fitStage() {
+            var sx = window.innerWidth / 960;
+            var sy = window.innerHeight / 540;
+            var s = sx < sy ? sx : sy;
+            document.getElementById('stage').style.transform = 'scale(' + s + ')';
+          }
+          window.addEventListener('resize', fitStage);
+          fitStage();
+
+          function updateDateTime() {
+            var d = new Date();
+            var hours = d.getHours();
+            var minutes = d.getMinutes();
+            var ampm = hours >= 12 ? 'PM' : 'AM';
+            hours = hours % 12;
+            hours = hours ? hours : 12;
+            var minutesStr = minutes < 10 ? '0' + minutes : minutes;
+            document.getElementById('clock').innerText = hours + ':' + minutesStr + ' ' + ampm;
+
+            var days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            var dayName = days[d.getDay()];
+            var monthName = months[d.getMonth()];
+            document.getElementById('date').innerText = dayName + ', ' + monthName + ' ' + d.getDate();
+          }
+          setInterval(updateDateTime, 10000);
+          updateDateTime();
+
+          function buildRows() {
+            var stack = document.getElementById('row-stack');
+            stack.innerHTML = '';
+            var rows = DATA[tabKeys[tabIdx]];
+            cIdxByRow = [];
+            for (var r = 0; r < rows.length; r++) {
+              cIdxByRow.push(0);
+              var rowEl = document.createElement('div');
+              rowEl.className = 'row';
+              var titleEl = document.createElement('div');
+              titleEl.className = 'r-title';
+              titleEl.innerText = rows[r].title;
+              rowEl.appendChild(titleEl);
+
+              var trackEl = document.createElement('div');
+              trackEl.className = 'track';
+              trackEl.id = 'track-' + r;
+
+              for (var c = 0; c < rows[r].items.length; c++) {
+                var it = rows[r].items[c];
+                var card = document.createElement('div');
+                card.className = 'card';
+                card.id = 'card-' + r + '-' + c;
+                card.innerHTML =
+                  '<div class="card-glow"></div>' +
+                  '<div class="c-inner" style="background-image:url(\'' + it.bg + '\')">' +
+                    '<div class="c-tag">' + it.tag + '</div>' +
+                    '<div class="c-shade">' +
+                      '<div class="c-title">' + it.title + '</div>' +
+                      '<div class="c-sub">' + it.sub + '</div>' +
+                    '</div>' +
+                  '</div>';
+                trackEl.appendChild(card);
+              }
+              rowEl.appendChild(trackEl);
+              stack.appendChild(rowEl);
+            }
+            rIdx = 0;
+            lastCardEl = null;
+          }
+
+          function scheduleHeroUpdate(item) {
+            if (heroTimer) clearTimeout(heroTimer);
+            heroTimer = setTimeout(function() {
+              document.getElementById('backdrop').style.backgroundImage = "url('" + item.bg + "')";
+              var b = document.getElementById('h-badge');
+              b.innerText = item.tag;
+              b.style.backgroundColor = item.accent;
+              document.getElementById('b-dot').style.backgroundColor = item.accent;
+              document.getElementById('h-meta').innerText = item.meta;
+              document.getElementById('h-title').innerText = item.title;
+              document.getElementById('h-desc').innerText = item.desc;
+            }, 140);
+          }
+
+          function syncFocus() {
+            if (lastCardEl) { lastCardEl.classList.remove('focused'); lastCardEl = null; }
+            if (lastTabEl) { lastTabEl.classList.remove('focused'); lastTabEl = null; }
+
+            var tabs = document.querySelectorAll('.tab');
+            for (var i = 0; i < tabs.length; i++) {
+              if (i === tabIdx) tabs[i].classList.add('active');
+              else tabs[i].classList.remove('active');
+            }
+
+            if (zone === 'nav') {
+              lastTabEl = tabs[tabIdx];
+              if (lastTabEl) lastTabEl.classList.add('focused');
+              return;
+            }
+
+            var cIdx = cIdxByRow[rIdx] || 0;
+            var card = document.getElementById('card-' + rIdx + '-' + cIdx);
+            if (card) {
+              card.classList.add('focused');
+              lastCardEl = card;
+            }
+
+            var track = document.getElementById('track-' + rIdx);
+            if (track) {
+              var offset = cIdx > 2 ? -((cIdx - 2) * 190) : 0;
+              track.style.transform = 'translateX(' + offset + 'px)';
+            }
+
+            var stack = document.getElementById('row-stack');
+            stack.style.transform = 'translateY(' + (-(rIdx * 138)) + 'px)';
+
+            var item = DATA[tabKeys[tabIdx]][rIdx].items[cIdx];
+            if (item) scheduleHeroUpdate(item);
+          }
+
+          window.addEventListener('keydown', function(e) {
+            var now = Date.now();
+            if (now - lastKeyTime < 110) { e.preventDefault(); return; }
+            lastKeyTime = now;
+
+            var code = e.keyCode || e.which;
+            var rows = DATA[tabKeys[tabIdx]];
+
+            if (code === 38) {
+              e.preventDefault();
+              if (zone === 'cards') {
+                if (rIdx > 0) rIdx--;
+                else zone = 'nav';
+                syncFocus();
+              }
+            } else if (code === 40) {
+              e.preventDefault();
+              if (zone === 'nav') {
+                zone = 'cards';
+                syncFocus();
+              } else if (rIdx < rows.length - 1) {
+                rIdx++;
+                syncFocus();
+              }
+            } else if (code === 37) {
+              e.preventDefault();
+              if (zone === 'nav') {
+                if (tabIdx > 0) { tabIdx--; buildRows(); syncFocus(); }
+              } else {
+                if (cIdxByRow[rIdx] > 0) { cIdxByRow[rIdx]--; syncFocus(); }
+              }
+            } else if (code === 39) {
+              e.preventDefault();
+              if (zone === 'nav') {
+                if (tabIdx < tabKeys.length - 1) { tabIdx++; buildRows(); syncFocus(); }
+              } else {
+                var maxC = rows[rIdx].items.length - 1;
+                if (cIdxByRow[rIdx] < maxC) { cIdxByRow[rIdx]++; syncFocus(); }
+              }
+            } else if (code === 13 || code === 23) {
+              e.preventDefault();
+              if (zone === 'cards') {
+                var item = rows[rIdx].items[cIdxByRow[rIdx]];
+                if (item && window.Android && window.Android.launch) {
+                  window.Android.launch(item.pkg);
+                }
+              }
+            }
+          });
+
+          buildRows();
+          syncFocus();
+          </script>
+          </body>
+          </html>
+          EOF
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.9'
+
+      - name: Build Debug APK
+        working-directory: proj
+        run: gradle assembleDebug --no-daemon
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: StudioPRO-apk
+          path: proj/app/build/outputs/apk/debug/app-debug.apk
